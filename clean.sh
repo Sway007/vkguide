@@ -1,0 +1,1 @@
+rm -rf ./bin ./build ./dist
