@@ -51,19 +51,20 @@ int main() {
         extensions[i] = pExtensions[i];
     }
     std::vector<const char*> layers = {"VK_LAYER_KHRONOS_validation"};
+    {
+        Engine engine(extensions, layers);
 
-    Engine engine(extensions, layers);
+        VkSurfaceKHR SDLSurface = nullptr;
+        SDL_Window*  window = nullptr;
 
-    VkSurfaceKHR SDLSurface = nullptr;
-    SDL_Window*  window = nullptr;
+        createSDLSurface(engine.m_instance, window, SDLSurface);
+        engine.initWithSurface(SDLSurface);
 
-    createSDLSurface(engine.m_instance, window, SDLSurface);
-    engine.initWithSurface(SDLSurface);
+        std::cout << "vk render app.\n";
+        mainLoop(engine);
 
-    std::cout << "vk render app.\n";
-    mainLoop(engine);
-
-    SDL_DestroyWindow(window);
-    SDL_Quit();
-    std::cout << "bye!\n";
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+    }
+    std::cout << "exit gracefully~ bye!\n";
 }
