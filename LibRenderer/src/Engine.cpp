@@ -25,6 +25,8 @@ Engine::Engine(const std::vector<const char*>& extensions, const std::vector<con
     std::cout << "Success to create vulkan instance.\n";
 }
 
+Engine::~Engine() { m_device.waitIdle(); }
+
 #ifndef VK_USE_PLATFORM_METAL_EXT
 void Engine::initWithSurface(VkSurfaceKHR surface) {
     m_surface = vk::raii::SurfaceKHR(m_instance, surface);
@@ -85,7 +87,7 @@ void Engine::createSwapchain() {
 
     m_swapchainImageFormat = surfaceFormats[0];
     for(const auto& surfaceFormat : surfaceFormats) {
-        if(surfaceFormat.format == vk::Format::eR8G8B8Unorm &&
+        if(surfaceFormat.format == vk::Format::eB8G8R8A8Unorm &&
            surfaceFormat.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear) {
             m_swapchainImageFormat = surfaceFormat;
             break;
@@ -126,6 +128,29 @@ void Engine::createSwapchain() {
         imageViewInfo.image = img;
         m_swapchainImageViews.emplace_back(m_device, imageViewInfo);
     }
+
+    m_drawImage.format = vk::Format::eR16G16B16A16Sfloat,
+    m_drawImage.imageExtent = {.width = m_swapchainExtent.width, .height = m_swapchainExtent.height, .depth = 1};
+
+    auto imageCreateInfo = vkStructsUtils::makeImageCreateInfo(
+        m_drawImage.format,
+        vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eStorage |
+            vk::ImageUsageFlagBits::eColorAttachment,
+        m_drawImage.imageExtent);
+    m_drawImage.image = vk::raii::Image(m_device, imageCreateInfo);
+
+    auto                   memRequirements = m_drawImage.image.getMemoryRequirements();
+    vk::MemoryAllocateInfo allocInfo{
+        .allocationSize = memRequirements.size,
+        .memoryTypeIndex = utils::findMemoryTypeIndex(m_chosenGPU, memRequirements.memoryTypeBits,
+                                                      vk::MemoryPropertyFlagBits::eDeviceLocal),
+    };
+    m_drawImage.imageMemory = vk::raii::DeviceMemory(m_device, allocInfo);
+    m_drawImage.image.bindMemory(m_drawImage.imageMemory, 0);
+
+    auto imageViewCreateInfo =
+        vkStructsUtils::makeImageViewCreateInfo(m_drawImage.format, m_drawImage.image, vk::ImageAspectFlagBits::eColor);
+    m_drawImage.imageView = vk::raii::ImageView(m_device, imageViewCreateInfo);
 
     std::cout << "Success to create swapchain.\n";
 }
@@ -178,23 +203,26 @@ void Engine::draw() {
     cmd.reset();
     cmd.begin(vk::CommandBufferBeginInfo{.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
 
-    imageUtils::transitionImage(cmd, acquiredSwapchainImage, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
-    vk::ClearColorValue clearColor;
-    float               flash = std::abs(std::sin(m_currentFrame / 120.f));
-    clearColor = {0.f, 0.f, flash, 1.f};
-    auto clearRange = vkStructsUtils::getImageSubresourceRange(vk::ImageAspectFlagBits::eColor);
-
-    cmd.clearColorImage(acquiredSwapchainImage, vk::ImageLayout::eGeneral, &clearColor, 1, &clearRange);
-    imageUtils::transitionImage(cmd, acquiredSwapchainImage, vk::ImageLayout::eGeneral,
+    imageUtils::transitionImage(cmd, m_drawImage.image, vk::ImageLayout::eUndefined,
+                                vk::ImageLayout::eTransferDstOptimal);
+    drawBackground(cmd, m_drawImage.image);
+    imageUtils::transitionImage(cmd, m_drawImage.image, vk::ImageLayout::eTransferDstOptimal,
+                                vk::ImageLayout::eTransferSrcOptimal);
+    imageUtils::transitionImage(cmd, acquiredSwapchainImage, vk::ImageLayout::eUndefined,
+                                vk::ImageLayout::eTransferDstOptimal);
+    imageUtils::copyImageToImage(cmd, m_drawImage.image, acquiredSwapchainImage,
+                                 {.width = m_drawImage.imageExtent.width, .height = m_drawImage.imageExtent.height},
+                                 m_swapchainExtent);
+    imageUtils::transitionImage(cmd, acquiredSwapchainImage, vk::ImageLayout::eTransferDstOptimal,
                                 vk::ImageLayout::ePresentSrcKHR);
     cmd.end();
 
-    auto cmdInfo = vkStructsUtils::getCommandBufferSubmitInfo(cmd);
-    auto waitInfo = vkStructsUtils::getSemaphoreSubmitInfo(vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-                                                           currentFrameData.swapchainSemaphore);
+    auto cmdInfo = vkStructsUtils::makeCommandBufferSubmitInfo(cmd);
+    auto waitInfo = vkStructsUtils::makeSemaphoreSubmitInfo(vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+                                                            currentFrameData.swapchainSemaphore);
     auto signalInfo =
-        vkStructsUtils::getSemaphoreSubmitInfo(vk::PipelineStageFlagBits2::eAllGraphics, swapchainRenderSemaphore);
-    auto submitInfo = vkStructsUtils::getSubmitInfo(&cmdInfo, &signalInfo, &waitInfo);
+        vkStructsUtils::makeSemaphoreSubmitInfo(vk::PipelineStageFlagBits2::eAllGraphics, swapchainRenderSemaphore);
+    auto submitInfo = vkStructsUtils::makeSubmitInfo(&cmdInfo, &signalInfo, &waitInfo);
     m_graphicsQueue.submit2(submitInfo, currentFrameData.renderFence);
 
     vk::PresentInfoKHR presentInfo{
@@ -205,7 +233,12 @@ void Engine::draw() {
         .pImageIndices = &swapchainImageIndex,
     };
     VK_CHECK(m_graphicsQueue.presentKHR(presentInfo));
-    m_currentFrame = (m_currentFrame + 1);
+    m_frameNumber++;
 }
 
-Engine::~Engine() { m_device.waitIdle(); }
+void Engine::drawBackground(vk::CommandBuffer cmd, vk::Image image) {
+    float               flash = std::abs(std::sin(m_frameNumber / 120.f));
+    vk::ClearColorValue clearColor{0.0f, 0.0f, flash, 1.f};
+    auto                clearRange = vkStructsUtils::makeImageSubresourceRange(vk::ImageAspectFlagBits::eColor);
+    cmd.clearColorImage(image, vk::ImageLayout::eTransferDstOptimal, &clearColor, 1, &clearRange);
+}

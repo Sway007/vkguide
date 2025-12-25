@@ -32,7 +32,9 @@ class Engine {
 
     vk::raii::CommandPool m_commandPool = nullptr;
     FrameData             m_frames[FRAME_OVERLAP];
-    uint8_t               m_currentFrame = 0;
+    uint32_t              m_frameNumber = 0;
+
+    AllocatedImage m_drawImage;
 
    public:
 #ifdef VK_USE_PLATFORM_METAL_EXT
@@ -56,6 +58,7 @@ class Engine {
     void       initVulkan();
     uint32_t   getGraphicsQueueFamilyIndex();
     void       createSwapchain();
-    FrameData& getCurrentFame() { return m_frames[m_currentFrame % FRAME_OVERLAP]; }
+    FrameData& getCurrentFame() { return m_frames[m_frameNumber % FRAME_OVERLAP]; }
     void       initFrameDatas();
+    void       drawBackground(vk::CommandBuffer cmd, vk::Image image);
 };

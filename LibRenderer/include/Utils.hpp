@@ -10,13 +10,19 @@
         }                                                          \
     } while(0)
 
+namespace utils {
+    uint32_t findMemoryTypeIndex(vk::PhysicalDevice gpu, uint32_t typeFilter, vk::MemoryPropertyFlags properties);
+}
+
 namespace imageUtils {
     void transitionImage(vk::CommandBuffer cmd, vk::Image image, vk::ImageLayout currentLayout,
                          vk::ImageLayout newLayout);
+    void copyImageToImage(vk::CommandBuffer cmd, vk::Image src, vk::Image dst, vk::Extent2D srcSize,
+                          vk::Extent2D dstSize);
 }  // namespace imageUtils
 
 namespace vkStructsUtils {
-    inline vk::ImageSubresourceRange getImageSubresourceRange(vk::ImageAspectFlags aspectMask) {
+    inline vk::ImageSubresourceRange makeImageSubresourceRange(vk::ImageAspectFlags aspectMask) {
         return vk::ImageSubresourceRange{
             .aspectMask = aspectMask,
             .baseMipLevel = 0,
@@ -26,21 +32,21 @@ namespace vkStructsUtils {
         };
     };
 
-    inline vk::CommandBufferSubmitInfo getCommandBufferSubmitInfo(vk::CommandBuffer cmd) {
+    inline vk::CommandBufferSubmitInfo makeCommandBufferSubmitInfo(vk::CommandBuffer cmd) {
         return vk::CommandBufferSubmitInfo{
             .commandBuffer = cmd,
         };
     }
 
-    inline vk::SemaphoreSubmitInfo getSemaphoreSubmitInfo(vk::PipelineStageFlags2 stageMask, vk::Semaphore semaphore) {
+    inline vk::SemaphoreSubmitInfo makeSemaphoreSubmitInfo(vk::PipelineStageFlags2 stageMask, vk::Semaphore semaphore) {
         return vk::SemaphoreSubmitInfo{
             .semaphore = semaphore,
             .stageMask = stageMask,
         };
     }
 
-    inline vk::SubmitInfo2 getSubmitInfo(vk::CommandBufferSubmitInfo* cmd, vk::SemaphoreSubmitInfo* signalSemaphore,
-                                         vk::SemaphoreSubmitInfo* waitSemaphore) {
+    inline vk::SubmitInfo2 makeSubmitInfo(vk::CommandBufferSubmitInfo* cmd, vk::SemaphoreSubmitInfo* signalSemaphore,
+                                          vk::SemaphoreSubmitInfo* waitSemaphore) {
         return vk::SubmitInfo2{
             .waitSemaphoreInfoCount = waitSemaphore == nullptr ? 0 : 1u,
             .pWaitSemaphoreInfos = waitSemaphore,
@@ -48,6 +54,30 @@ namespace vkStructsUtils {
             .pSignalSemaphoreInfos = signalSemaphore,
             .commandBufferInfoCount = 1,
             .pCommandBufferInfos = cmd,
+        };
+    }
+
+    inline vk::ImageCreateInfo makeImageCreateInfo(vk::Format format, vk::ImageUsageFlags usage, vk::Extent3D extent) {
+        return vk::ImageCreateInfo{
+            .imageType = vk::ImageType::e2D,
+            .format = format,
+            .extent = extent,
+            .mipLevels = 1,
+            .arrayLayers = 1,
+            .samples = vk::SampleCountFlagBits::e1,
+            .tiling = vk::ImageTiling::eOptimal,
+            .usage = usage,
+        };
+    }
+
+    inline vk::ImageViewCreateInfo makeImageViewCreateInfo(vk::Format format, vk::Image image,
+                                                           vk::ImageAspectFlags aspectFlags) {
+        return vk::ImageViewCreateInfo{
+            .viewType = vk::ImageViewType::e2D,
+            .image = image,
+            .format = format,
+            .subresourceRange =
+                {.baseMipLevel = 0, .levelCount = 1, .baseArrayLayer = 0, .layerCount = 1, .aspectMask = aspectFlags},
         };
     }
 }  // namespace vkStructsUtils
