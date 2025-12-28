@@ -34,7 +34,13 @@ class Engine {
     FrameData             m_frames[FRAME_OVERLAP];
     uint32_t              m_frameNumber = 0;
 
-    AllocatedImage m_drawImage;
+    AllocatedImage                m_drawImage;
+    DescriptorAllocator           m_globalDescriptorAllocator;
+    vk::raii::DescriptorSet       m_drawImageDescriptorSet = nullptr;
+    vk::raii::DescriptorSetLayout m_drawImageDescriptorSetLayout = nullptr;
+
+    vk::raii::Pipeline       m_gradientPipeline = nullptr;
+    vk::raii::PipelineLayout m_gradientPipelineLayout = nullptr;
 
    public:
 #ifdef VK_USE_PLATFORM_METAL_EXT
@@ -61,4 +67,6 @@ class Engine {
     FrameData& getCurrentFame() { return m_frames[m_frameNumber % FRAME_OVERLAP]; }
     void       initFrameDatas();
     void       drawBackground(vk::CommandBuffer cmd, vk::Image image);
+    void       initDescriptors();
+    void       initGradientPipeline();
 };

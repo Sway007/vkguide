@@ -66,6 +66,8 @@ void Engine::initVulkan() {
 
     createSwapchain();
     initFrameDatas();
+    initDescriptors();
+    initGradientPipeline();
 }
 
 uint32_t Engine::getGraphicsQueueFamilyIndex() {
@@ -203,10 +205,9 @@ void Engine::draw() {
     cmd.reset();
     cmd.begin(vk::CommandBufferBeginInfo{.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
 
-    imageUtils::transitionImage(cmd, m_drawImage.image, vk::ImageLayout::eUndefined,
-                                vk::ImageLayout::eTransferDstOptimal);
+    imageUtils::transitionImage(cmd, m_drawImage.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
     drawBackground(cmd, m_drawImage.image);
-    imageUtils::transitionImage(cmd, m_drawImage.image, vk::ImageLayout::eTransferDstOptimal,
+    imageUtils::transitionImage(cmd, m_drawImage.image, vk::ImageLayout::eGeneral,
                                 vk::ImageLayout::eTransferSrcOptimal);
     imageUtils::transitionImage(cmd, acquiredSwapchainImage, vk::ImageLayout::eUndefined,
                                 vk::ImageLayout::eTransferDstOptimal);
@@ -237,8 +238,61 @@ void Engine::draw() {
 }
 
 void Engine::drawBackground(vk::CommandBuffer cmd, vk::Image image) {
-    float               flash = std::abs(std::sin(m_frameNumber / 120.f));
-    vk::ClearColorValue clearColor{0.0f, 0.0f, flash, 1.f};
-    auto                clearRange = vkStructsUtils::makeImageSubresourceRange(vk::ImageAspectFlagBits::eColor);
-    cmd.clearColorImage(image, vk::ImageLayout::eTransferDstOptimal, &clearColor, 1, &clearRange);
+    // float               flash = std::abs(std::sin(m_frameNumber / 120.f));
+    // vk::ClearColorValue clearColor{0.0f, 0.0f, flash, 1.f};
+    // auto                clearRange = vkStructsUtils::makeImageSubresourceRange(vk::ImageAspectFlagBits::eColor);
+    // cmd.clearColorImage(image, vk::ImageLayout::eTransferDstOptimal, &clearColor, 1, &clearRange);
+
+    cmd.bindPipeline(vk::PipelineBindPoint::eCompute, m_gradientPipeline);
+    cmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, m_gradientPipelineLayout, 0, *m_drawImageDescriptorSet,
+                           nullptr);
+    cmd.dispatch(std::ceil(m_drawImage.imageExtent.width / 16.f), std::ceil(m_drawImage.imageExtent.height / 16.f), 1);
+}
+
+void Engine::initDescriptors() {
+    std::vector<DescriptorAllocator::PoolSizeRatio> sizes{
+        {vk::DescriptorType::eStorageImage, 1},
+    };
+    m_globalDescriptorAllocator.initPool(m_device, 10, sizes);
+
+    {
+        DescriptorLayoutBuilder builder;
+        builder.addBinding(0, vk::DescriptorType::eStorageImage);
+        m_drawImageDescriptorSetLayout = builder.build(m_device, vk::ShaderStageFlagBits::eCompute);
+    }
+
+    m_drawImageDescriptorSet = m_globalDescriptorAllocator.allocate(m_device, m_drawImageDescriptorSetLayout);
+    vk::DescriptorImageInfo imageInfo{
+        .imageLayout = vk::ImageLayout::eGeneral,
+        .imageView = m_drawImage.imageView,
+    };
+    vk::WriteDescriptorSet drawImageWrite{
+        .dstBinding = 0,
+        .dstSet = m_drawImageDescriptorSet,
+        .descriptorCount = 1,
+        .descriptorType = vk::DescriptorType::eStorageImage,
+        .pImageInfo = &imageInfo,
+    };
+    m_device.updateDescriptorSets(drawImageWrite, {});
+}
+
+void Engine::initGradientPipeline() {
+    vk::PipelineLayoutCreateInfo computeLayoutInfo{
+        .setLayoutCount = 1,
+        .pSetLayouts = &*m_drawImageDescriptorSetLayout,
+    };
+    m_gradientPipelineLayout = vk::raii::PipelineLayout(m_device, computeLayoutInfo);
+
+    auto computShaderModule = utils::loadShaderModule(SHADER_DIR "/gradient.comp.spv", m_device);
+    vk::PipelineShaderStageCreateInfo stageInfo{
+        .stage = vk::ShaderStageFlagBits::eCompute,
+        .module = computShaderModule,
+        .pName = "main",
+    };
+
+    vk::ComputePipelineCreateInfo computePipelineInfo{
+        .layout = m_gradientPipelineLayout,
+        .stage = stageInfo,
+    };
+    m_gradientPipeline = m_device.createComputePipeline(nullptr, computePipelineInfo);
 }

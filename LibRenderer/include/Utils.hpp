@@ -1,5 +1,8 @@
+#pragma once
+
 #include <iostream>
 #include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_raii.hpp>
 
 #define VK_CHECK(x)                                                \
     do {                                                           \
@@ -12,7 +15,8 @@
 
 namespace utils {
     uint32_t findMemoryTypeIndex(vk::PhysicalDevice gpu, uint32_t typeFilter, vk::MemoryPropertyFlags properties);
-}
+    vk::raii::ShaderModule loadShaderModule(const char* filePath, vk::raii::Device& device);
+}  // namespace utils
 
 namespace imageUtils {
     void transitionImage(vk::CommandBuffer cmd, vk::Image image, vk::ImageLayout currentLayout,
