@@ -84,4 +84,30 @@ namespace vkStructsUtils {
                 {.baseMipLevel = 0, .levelCount = 1, .baseArrayLayer = 0, .layerCount = 1, .aspectMask = aspectFlags},
         };
     }
+
+    inline vk::RenderingAttachmentInfo makeColorAttachmentInfo(vk::ImageView imageView, vk::ClearValue* clear,
+                                                               vk::ImageLayout layout) {
+        vk::RenderingAttachmentInfo colorAttachmentInfo{
+            .imageView = imageView,
+            .imageLayout = layout,
+            .loadOp = clear ? vk::AttachmentLoadOp::eClear : vk::AttachmentLoadOp::eLoad,
+            .storeOp = vk::AttachmentStoreOp::eStore,
+        };
+        if(clear) {
+            colorAttachmentInfo.clearValue = *clear;
+        }
+        return colorAttachmentInfo;
+    }
+
+    inline vk::RenderingInfo makeRenderingInfo(vk::Extent2D renderExtent, vk::RenderingAttachmentInfo* colorAttachment,
+                                               vk::RenderingAttachmentInfo* depthAttachment) {
+        return vk::RenderingInfo{
+            .renderArea = {{0, 0}, renderExtent},
+            .layerCount = 1,
+            .colorAttachmentCount = 1,
+            .pColorAttachments = colorAttachment,
+            .pDepthAttachment = depthAttachment,
+            .pStencilAttachment = nullptr,
+        };
+    }
 }  // namespace vkStructsUtils

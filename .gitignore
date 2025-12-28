@@ -2,3 +2,4 @@
 **/dist/
 bin/
 .DS_Store
+imgui.ini

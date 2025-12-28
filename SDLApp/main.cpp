@@ -1,5 +1,7 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
+#include <imgui_impl_sdl3.h>
+#include <imgui_impl_vulkan.h>
 #include <vulkan/vulkan.h>
 
 #include <iostream>
@@ -35,7 +37,17 @@ void mainLoop(Engine& engine) {
     while(!bQuit) {
         while(SDL_PollEvent(&e)) {
             if(e.type == SDL_EVENT_QUIT || e.type == SDL_EVENT_TERMINATING) bQuit = true;
+
+            ImGui_ImplSDL3_ProcessEvent(&e);
         }
+
+        ImGui_ImplVulkan_NewFrame();
+        ImGui_ImplSDL3_NewFrame();
+        ImGui::NewFrame();
+
+        ImGui::ShowDemoWindow();
+        ImGui::Render();
+
         engine.draw();
     }
 }
@@ -59,6 +71,7 @@ int main() {
 
         createSDLSurface(engine.m_instance, window, SDLSurface);
         engine.initWithSurface(SDLSurface);
+        engine.initImGUI(window);
 
         std::cout << "vk render app.\n";
         mainLoop(engine);

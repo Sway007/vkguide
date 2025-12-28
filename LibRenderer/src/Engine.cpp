@@ -25,7 +25,12 @@ Engine::Engine(const std::vector<const char*>& extensions, const std::vector<con
     std::cout << "Success to create vulkan instance.\n";
 }
 
-Engine::~Engine() { m_device.waitIdle(); }
+Engine::~Engine() {
+    m_device.waitIdle();
+#ifndef VK_USE_PLATFORM_METAL_EXT
+    ImGui_ImplVulkan_Shutdown();
+#endif
+}
 
 #ifndef VK_USE_PLATFORM_METAL_EXT
 void Engine::initWithSurface(VkSurfaceKHR surface) {
@@ -214,8 +219,17 @@ void Engine::draw() {
     imageUtils::copyImageToImage(cmd, m_drawImage.image, acquiredSwapchainImage,
                                  {.width = m_drawImage.imageExtent.width, .height = m_drawImage.imageExtent.height},
                                  m_swapchainExtent);
+#ifdef VK_USE_PLATFORM_METAL_EXT
     imageUtils::transitionImage(cmd, acquiredSwapchainImage, vk::ImageLayout::eTransferDstOptimal,
                                 vk::ImageLayout::ePresentSrcKHR);
+#else
+    imageUtils::transitionImage(cmd, acquiredSwapchainImage, vk::ImageLayout::eTransferDstOptimal,
+                                vk::ImageLayout::eColorAttachmentOptimal);
+    drawImGui(cmd, m_swapchainImageViews[swapchainImageIndex]);
+    imageUtils::transitionImage(cmd, acquiredSwapchainImage, vk::ImageLayout::eColorAttachmentOptimal,
+                                vk::ImageLayout::ePresentSrcKHR);
+#endif
+
     cmd.end();
 
     auto cmdInfo = vkStructsUtils::makeCommandBufferSubmitInfo(cmd);
@@ -296,3 +310,63 @@ void Engine::initGradientPipeline() {
     };
     m_gradientPipeline = m_device.createComputePipeline(nullptr, computePipelineInfo);
 }
+
+#ifndef VK_USE_PLATFORM_METAL_EXT
+void Engine::initImGUI(SDL_Window* pWindow) {
+    vk::DescriptorPoolSize poolSize[] = {
+        {.type = vk::DescriptorType::eSampler, .descriptorCount = 500},
+        {.type = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = 500},
+        {.type = vk::DescriptorType::eSampledImage, .descriptorCount = 500},
+        {.type = vk::DescriptorType::eStorageImage, .descriptorCount = 500},
+        {.type = vk::DescriptorType::eUniformTexelBuffer, .descriptorCount = 500},
+        {.type = vk::DescriptorType::eStorageTexelBuffer, .descriptorCount = 500},
+        {.type = vk::DescriptorType::eUniformBuffer, .descriptorCount = 500},
+        {.type = vk::DescriptorType::eStorageBuffer, .descriptorCount = 500},
+        {.type = vk::DescriptorType::eUniformBufferDynamic, .descriptorCount = 500},
+        {.type = vk::DescriptorType::eInputAttachment, .descriptorCount = 500},
+    };
+    vk::DescriptorPoolCreateInfo poolInfo{
+        .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
+        .maxSets = 500,
+        .poolSizeCount = (uint32_t)std::size(poolSize),
+        .pPoolSizes = poolSize,
+    };
+    m_imguiPool = vk::raii::DescriptorPool(m_device, poolInfo);
+
+    ImGui::CreateContext();
+    ImGui_ImplSDL3_InitForVulkan(pWindow);
+
+    VkFormat                         format = static_cast<VkFormat>(m_swapchainImageFormat.format);
+    VkPipelineRenderingCreateInfoKHR pipelineRenderingCreateInfo{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR,
+        .colorAttachmentCount = 1,
+        .pColorAttachmentFormats = &format,
+    };
+
+    ImGui_ImplVulkan_InitInfo initInfo{
+        .Instance = *m_instance,
+        .PhysicalDevice = *m_chosenGPU,
+        .Device = *m_device,
+        .Queue = *m_graphicsQueue,
+        .DescriptorPool = *m_imguiPool,
+        .MinImageCount = 3,
+        .ImageCount = 3,
+        .UseDynamicRendering = true,
+        .PipelineInfoMain =
+            {
+                .MSAASamples = VK_SAMPLE_COUNT_1_BIT,
+                .PipelineRenderingCreateInfo = pipelineRenderingCreateInfo,
+            },
+    };
+    ImGui_ImplVulkan_Init(&initInfo);
+}
+
+void Engine::drawImGui(vk::CommandBuffer cmd, vk::ImageView targetImageView) {
+    auto colorAttachmentInfo =
+        vkStructsUtils::makeColorAttachmentInfo(targetImageView, nullptr, vk::ImageLayout::eColorAttachmentOptimal);
+    auto renderingInfo = vkStructsUtils::makeRenderingInfo(m_swapchainExtent, &colorAttachmentInfo, nullptr);
+    cmd.beginRendering(renderingInfo);
+    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
+    cmd.endRendering();
+}
+#endif

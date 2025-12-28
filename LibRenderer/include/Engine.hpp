@@ -2,8 +2,17 @@
 
 #include <vulkan/vulkan_raii.hpp>
 
+#ifndef VK_USE_PLATFORM_METAL_EXT
+#include <imgui.h>
+#include <imgui_impl_sdl3.h>
+#include <imgui_impl_vulkan.h>
+#endif
+
 #include "Structs.hpp"
 #include "Utils.hpp"
+
+#ifndef VK_USE_PLATFORM_METAL_EXT
+#endif
 
 using CAMetalLayer = void;
 
@@ -42,6 +51,10 @@ class Engine {
     vk::raii::Pipeline       m_gradientPipeline = nullptr;
     vk::raii::PipelineLayout m_gradientPipelineLayout = nullptr;
 
+#ifndef VK_USE_PLATFORM_METAL_EXT
+    vk::raii::DescriptorPool m_imguiPool = nullptr;
+#endif
+
    public:
 #ifdef VK_USE_PLATFORM_METAL_EXT
     Engine(CAMetalLayer* metalLayer, std::vector<const char*> extensions, std::vector<const char*> layers);
@@ -54,6 +67,8 @@ class Engine {
 
 #ifndef VK_USE_PLATFORM_METAL_EXT
     void initWithSurface(VkSurfaceKHR surface);
+    void initImGUI(SDL_Window* pWindow);
+    void drawImGui(vk::CommandBuffer cmd, vk::ImageView targetImageView);
 #else
     void init();
 #endif
