@@ -1,0 +1,1 @@
+This is a personal Vulkan programming practice project. Its' architecture is heavily based on the wonderful [vkguide](https://vkguide.dev/) project, which I rewritten using vulkan_hpp and vulkan_raii to deepen my understanding of the Vulkan API.
