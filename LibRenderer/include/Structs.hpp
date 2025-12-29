@@ -1,5 +1,6 @@
 #pragma once
 
+#include <glm/glm.hpp>
 #include <vulkan/vulkan_raii.hpp>
 
 struct FrameData {
@@ -82,4 +83,18 @@ struct DescriptorAllocator {
         auto descriptorSets = device.allocateDescriptorSets(allocInfo);
         return std::move(descriptorSets.front());
     }
+};
+
+struct ComputePushConstants {
+    glm::vec4 data1;
+    glm::vec4 data2;
+    glm::vec4 data3;
+    glm::vec4 data4;
+};
+
+struct ComputeEffect {
+    const char*          name;
+    vk::raii::Pipeline   pipeline = nullptr;
+    vk::PipelineLayout   layout;
+    ComputePushConstants data;
 };

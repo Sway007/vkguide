@@ -41,13 +41,7 @@ void mainLoop(Engine& engine) {
             ImGui_ImplSDL3_ProcessEvent(&e);
         }
 
-        ImGui_ImplVulkan_NewFrame();
-        ImGui_ImplSDL3_NewFrame();
-        ImGui::NewFrame();
-
-        ImGui::ShowDemoWindow();
-        ImGui::Render();
-
+        engine.setupGui();
         engine.draw();
     }
 }

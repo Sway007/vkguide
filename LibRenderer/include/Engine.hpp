@@ -51,6 +51,9 @@ class Engine {
     vk::raii::Pipeline       m_gradientPipeline = nullptr;
     vk::raii::PipelineLayout m_gradientPipelineLayout = nullptr;
 
+    std::vector<ComputeEffect> m_backgroundEffects;
+    int                        m_currentBackgroundEffect = 0;
+
 #ifndef VK_USE_PLATFORM_METAL_EXT
     vk::raii::DescriptorPool m_imguiPool = nullptr;
 #endif
@@ -69,6 +72,7 @@ class Engine {
     void initWithSurface(VkSurfaceKHR surface);
     void initImGUI(SDL_Window* pWindow);
     void drawImGui(vk::CommandBuffer cmd, vk::ImageView targetImageView);
+    void setupGui();
 #else
     void init();
 #endif
@@ -83,5 +87,5 @@ class Engine {
     void       initFrameDatas();
     void       drawBackground(vk::CommandBuffer cmd, vk::Image image);
     void       initDescriptors();
-    void       initGradientPipeline();
+    void       initComputePipeline();
 };

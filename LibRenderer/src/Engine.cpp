@@ -72,7 +72,7 @@ void Engine::initVulkan() {
     createSwapchain();
     initFrameDatas();
     initDescriptors();
-    initGradientPipeline();
+    initComputePipeline();
 }
 
 uint32_t Engine::getGraphicsQueueFamilyIndex() {
@@ -252,14 +252,14 @@ void Engine::draw() {
 }
 
 void Engine::drawBackground(vk::CommandBuffer cmd, vk::Image image) {
-    // float               flash = std::abs(std::sin(m_frameNumber / 120.f));
-    // vk::ClearColorValue clearColor{0.0f, 0.0f, flash, 1.f};
-    // auto                clearRange = vkStructsUtils::makeImageSubresourceRange(vk::ImageAspectFlagBits::eColor);
-    // cmd.clearColorImage(image, vk::ImageLayout::eTransferDstOptimal, &clearColor, 1, &clearRange);
+    ComputeEffect& effect = m_backgroundEffects[m_currentBackgroundEffect];
 
-    cmd.bindPipeline(vk::PipelineBindPoint::eCompute, m_gradientPipeline);
+    cmd.bindPipeline(vk::PipelineBindPoint::eCompute, effect.pipeline);
     cmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, m_gradientPipelineLayout, 0, *m_drawImageDescriptorSet,
                            nullptr);
+    cmd.pushConstants(m_gradientPipelineLayout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(ComputePushConstants),
+                      &effect.data);
+
     cmd.dispatch(std::ceil(m_drawImage.imageExtent.width / 16.f), std::ceil(m_drawImage.imageExtent.height / 16.f), 1);
 }
 
@@ -290,25 +290,55 @@ void Engine::initDescriptors() {
     m_device.updateDescriptorSets(drawImageWrite, {});
 }
 
-void Engine::initGradientPipeline() {
+void Engine::initComputePipeline() {
+    vk::PushConstantRange pushConstant{
+        .offset = 0,
+        .size = sizeof(ComputePushConstants),
+        .stageFlags = vk::ShaderStageFlagBits::eCompute,
+    };
+
     vk::PipelineLayoutCreateInfo computeLayoutInfo{
         .setLayoutCount = 1,
         .pSetLayouts = &*m_drawImageDescriptorSetLayout,
+        .pushConstantRangeCount = 1,
+        .pPushConstantRanges = &pushConstant,
     };
     m_gradientPipelineLayout = vk::raii::PipelineLayout(m_device, computeLayoutInfo);
 
-    auto computShaderModule = utils::loadShaderModule(SHADER_DIR "/gradient.comp.spv", m_device);
+    auto gradientShaderModule = utils::loadShaderModule(SHADER_DIR "/gradient_color.comp.spv", m_device);
     vk::PipelineShaderStageCreateInfo stageInfo{
         .stage = vk::ShaderStageFlagBits::eCompute,
-        .module = computShaderModule,
+        .module = gradientShaderModule,
         .pName = "main",
     };
+    auto skyShaderModule = utils::loadShaderModule(SHADER_DIR "/sky.comp.spv", m_device);
 
-    vk::ComputePipelineCreateInfo computePipelineInfo{
+    vk::ComputePipelineCreateInfo computePipelineCreateInfo{
         .layout = m_gradientPipelineLayout,
         .stage = stageInfo,
     };
-    m_gradientPipeline = m_device.createComputePipeline(nullptr, computePipelineInfo);
+
+    ComputeEffect gradient{
+        .layout = m_gradientPipelineLayout,
+        .name = "gradient",
+        .data =
+            {
+                .data1 = glm::vec4(1, 0, 0, 1),
+                .data2 = glm::vec4(0, 1, 1, 1),
+            },
+    };
+    gradient.pipeline = m_device.createComputePipeline(nullptr, computePipelineCreateInfo);
+
+    computePipelineCreateInfo.stage.module = skyShaderModule;
+    ComputeEffect sky{
+        .layout = m_gradientPipelineLayout,
+        .name = "sky",
+        .data = {.data1 = glm::vec4(0.1, 0.2, 0.4, 0.97)},
+    };
+    sky.pipeline = m_device.createComputePipeline(nullptr, computePipelineCreateInfo);
+
+    m_backgroundEffects.push_back(std::move(gradient));
+    m_backgroundEffects.push_back(std::move(sky));
 }
 
 #ifndef VK_USE_PLATFORM_METAL_EXT
@@ -368,5 +398,26 @@ void Engine::drawImGui(vk::CommandBuffer cmd, vk::ImageView targetImageView) {
     cmd.beginRendering(renderingInfo);
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
     cmd.endRendering();
+}
+
+void Engine::setupGui() {
+    ImGui_ImplVulkan_NewFrame();
+    ImGui_ImplSDL3_NewFrame();
+    ImGui::NewFrame();
+
+    if(ImGui::Begin("background")) {
+        ComputeEffect& selected = m_backgroundEffects[m_currentBackgroundEffect];
+
+        ImGui::Text("Selected effect: %s", selected.name);
+
+        ImGui::SliderInt("Effect Index", &m_currentBackgroundEffect, 0, m_backgroundEffects.size() - 1);
+        ImGui::InputFloat4("data1", (float*)&selected.data.data1);
+        ImGui::InputFloat4("data2", (float*)&selected.data.data2);
+        ImGui::InputFloat4("data3", (float*)&selected.data.data3);
+        ImGui::InputFloat4("data4", (float*)&selected.data.data4);
+    }
+    ImGui::End();
+
+    ImGui::Render();
 }
 #endif
