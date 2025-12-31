@@ -54,6 +54,9 @@ class Engine {
     std::vector<ComputeEffect> m_backgroundEffects;
     int                        m_currentBackgroundEffect = 0;
 
+    vk::raii::Pipeline       m_trianglePipeline = nullptr;
+    vk::raii::PipelineLayout m_trianglePipelineLayout = nullptr;
+
 #ifndef VK_USE_PLATFORM_METAL_EXT
     vk::raii::DescriptorPool m_imguiPool = nullptr;
 #endif
@@ -88,4 +91,6 @@ class Engine {
     void       drawBackground(vk::CommandBuffer cmd, vk::Image image);
     void       initDescriptors();
     void       initComputePipeline();
+    void       initTrianglePipeline();
+    void       drawGeometry(vk::CommandBuffer cmd);
 };

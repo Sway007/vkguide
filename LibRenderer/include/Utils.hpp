@@ -110,4 +110,28 @@ namespace vkStructsUtils {
             .pStencilAttachment = nullptr,
         };
     }
+
+    inline vk::PipelineShaderStageCreateInfo makePipelineShaderStageCreateInfo(vk::ShaderStageFlagBits stage,
+                                                                               vk::ShaderModule        shaderModule,
+                                                                               const char*             entry = "main") {
+        return vk::PipelineShaderStageCreateInfo{
+            .stage = stage,
+            .module = shaderModule,
+            .pName = entry,
+        };
+    }
+
+    inline vk::RenderingAttachmentInfo makeRenderingAttachmentInfo(vk::ImageView imageView, vk::ClearValue* clearValue,
+                                                                   vk::ImageLayout imageLayout) {
+        vk::RenderingAttachmentInfo colorAttachment{
+            .imageView = imageView,
+            .imageLayout = imageLayout,
+            .loadOp = clearValue ? vk::AttachmentLoadOp::eClear : vk::AttachmentLoadOp::eLoad,
+            .storeOp = vk::AttachmentStoreOp::eStore,
+        };
+        if(clearValue) {
+            colorAttachment.clearValue = *clearValue;
+        }
+        return colorAttachment;
+    }
 }  // namespace vkStructsUtils

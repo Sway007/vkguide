@@ -5,6 +5,8 @@
 #include <array>
 #include <iostream>
 
+#include "../include/PipelineBuilder.hpp"
+
 Engine::Engine(const std::vector<const char*>& extensions, const std::vector<const char*>& layers) {
     vk::ApplicationInfo appInfo{
         .pEngineName = "SWAY",
@@ -73,6 +75,7 @@ void Engine::initVulkan() {
     initFrameDatas();
     initDescriptors();
     initComputePipeline();
+    initTrianglePipeline();
 }
 
 uint32_t Engine::getGraphicsQueueFamilyIndex() {
@@ -211,8 +214,15 @@ void Engine::draw() {
     cmd.begin(vk::CommandBufferBeginInfo{.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
 
     imageUtils::transitionImage(cmd, m_drawImage.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
+
     drawBackground(cmd, m_drawImage.image);
+
     imageUtils::transitionImage(cmd, m_drawImage.image, vk::ImageLayout::eGeneral,
+                                vk::ImageLayout::eColorAttachmentOptimal);
+
+    drawGeometry(cmd);
+
+    imageUtils::transitionImage(cmd, m_drawImage.image, vk::ImageLayout::eColorAttachmentOptimal,
                                 vk::ImageLayout::eTransferSrcOptimal);
     imageUtils::transitionImage(cmd, acquiredSwapchainImage, vk::ImageLayout::eUndefined,
                                 vk::ImageLayout::eTransferDstOptimal);
@@ -421,3 +431,54 @@ void Engine::setupGui() {
     ImGui::Render();
 }
 #endif
+
+void Engine::initTrianglePipeline() {
+    auto vertShaderModule = utils::loadShaderModule(SHADER_DIR "/colored_triangle.vert.spv", m_device);
+    auto fragShaderModule = utils::loadShaderModule(SHADER_DIR "/colored_triangle.frag.spv", m_device);
+
+    vk::PipelineLayoutCreateInfo layoutInfo{};
+    m_trianglePipelineLayout = vk::raii::PipelineLayout(m_device, layoutInfo);
+
+    PipelineBuilder pipelineBuilder{};
+    pipelineBuilder.m_pipelineLayout = m_trianglePipelineLayout;
+    pipelineBuilder.setShaders(vertShaderModule, fragShaderModule);
+    pipelineBuilder.setInputTopology(vk::PrimitiveTopology::eTriangleList);
+    pipelineBuilder.setPolygonMode(vk::PolygonMode::eFill);
+    pipelineBuilder.setCullMode(vk::CullModeFlagBits::eNone, vk::FrontFace::eClockwise);
+    pipelineBuilder.setMultiSamplingNone();
+    pipelineBuilder.disableBlending();
+    pipelineBuilder.disableDepthTest();
+    pipelineBuilder.setColorAttachmentFormat(m_drawImage.format);
+    pipelineBuilder.setDepthFormat(vk::Format::eUndefined);
+
+    m_trianglePipeline = pipelineBuilder.build(m_device);
+}
+
+void Engine::drawGeometry(vk::CommandBuffer cmd) {
+    auto colorAttachment = vkStructsUtils::makeColorAttachmentInfo(m_drawImage.imageView, nullptr,
+                                                                   vk::ImageLayout::eColorAttachmentOptimal);
+    auto renderingInfo = vkStructsUtils::makeRenderingInfo(
+        {.width = m_drawImage.imageExtent.width, .height = m_drawImage.imageExtent.height}, &colorAttachment, nullptr);
+
+    cmd.beginRendering(renderingInfo);
+    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, m_trianglePipeline);
+
+    vk::Viewport viewport = {};
+    viewport.x = 0;
+    viewport.y = 0;
+    viewport.width = m_drawImage.imageExtent.width;
+    viewport.height = m_drawImage.imageExtent.height;
+    viewport.minDepth = 0.f;
+    viewport.maxDepth = 1.f;
+    cmd.setViewport(0, 1, &viewport);
+
+    vk::Rect2D scissor = {};
+    scissor.offset.x = 0;
+    scissor.offset.y = 0;
+    scissor.extent.width = m_drawImage.imageExtent.width;
+    scissor.extent.height = m_drawImage.imageExtent.height;
+    cmd.setScissor(0, 1, &scissor);
+
+    cmd.draw(3, 1, 0, 0);
+    cmd.endRendering();
+}
