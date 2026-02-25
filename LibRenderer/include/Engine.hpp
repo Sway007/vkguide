@@ -1,5 +1,7 @@
 #pragma once
-
+#define GLM_ENABLE_EXPERIMENTAL
+#include <filesystem>
+#include <glm/gtx/transform.hpp>
 #include <vulkan/vulkan_raii.hpp>
 
 #ifndef VK_USE_PLATFORM_METAL_EXT
@@ -8,6 +10,7 @@
 #include <imgui_impl_vulkan.h>
 #endif
 
+#include "Loder.hpp"
 #include "Structs.hpp"
 #include "Utils.hpp"
 
@@ -43,6 +46,7 @@ class Engine {
     FrameData             m_frames[FRAME_OVERLAP];
     uint32_t              m_frameNumber = 0;
 
+    AllocatedImage                m_depthImage;
     AllocatedImage                m_drawImage;
     DescriptorAllocator           m_globalDescriptorAllocator;
     vk::raii::DescriptorSet       m_drawImageDescriptorSet = nullptr;
@@ -54,12 +58,21 @@ class Engine {
     std::vector<ComputeEffect> m_backgroundEffects;
     int                        m_currentBackgroundEffect = 0;
 
-    vk::raii::Pipeline       m_trianglePipeline = nullptr;
-    vk::raii::PipelineLayout m_trianglePipelineLayout = nullptr;
-
 #ifndef VK_USE_PLATFORM_METAL_EXT
     vk::raii::DescriptorPool m_imguiPool = nullptr;
 #endif
+
+    // immediate command structs
+    vk::raii::Fence         m_imFence = nullptr;
+    vk::raii::CommandPool   m_imCommandPool = nullptr;
+    vk::raii::CommandBuffer m_imCommandBuffer = nullptr;
+
+    // Mesh pipeline realted
+    vk::raii::PipelineLayout m_meshPipelineLayout = nullptr;
+    vk::raii::Pipeline       m_meshPipeline = nullptr;
+    GPUMeshBuffers           m_rectangle;
+
+    std::vector<std::shared_ptr<MeshAsset>> testMeshes;
 
    public:
 #ifdef VK_USE_PLATFORM_METAL_EXT
@@ -80,17 +93,22 @@ class Engine {
     void init();
 #endif
 
-    void draw();
+    void           draw();
+    GPUMeshBuffers uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices);
 
    private:
-    void       initVulkan();
-    uint32_t   getGraphicsQueueFamilyIndex();
-    void       createSwapchain();
-    FrameData& getCurrentFame() { return m_frames[m_frameNumber % FRAME_OVERLAP]; }
-    void       initFrameDatas();
-    void       drawBackground(vk::CommandBuffer cmd, vk::Image image);
-    void       initDescriptors();
-    void       initComputePipeline();
-    void       initTrianglePipeline();
-    void       drawGeometry(vk::CommandBuffer cmd);
+    void            initVulkan();
+    uint32_t        getGraphicsQueueFamilyIndex();
+    void            createSwapchain();
+    FrameData&      getCurrentFame() { return m_frames[m_frameNumber % FRAME_OVERLAP]; }
+    void            initFrameDatas();
+    void            drawBackground(vk::CommandBuffer cmd, vk::Image image);
+    void            initDescriptors();
+    void            initComputePipeline();
+    void            drawGeometry(vk::CommandBuffer cmd);
+    AllocatedBuffer createBuffer(size_t allocSize, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags memoryProperty);
+    void            immediateSubmit(std::function<void(vk::CommandBuffer cmd)>&& function);
+    void            initMeshPipeline();
+    void            initPipelines();
+    void            initDefaultData();
 };

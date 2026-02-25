@@ -5,6 +5,7 @@
 #include <array>
 #include <iostream>
 
+#include "../include/Loder.hpp"
 #include "../include/PipelineBuilder.hpp"
 
 Engine::Engine(const std::vector<const char*>& extensions, const std::vector<const char*>& layers) {
@@ -46,9 +47,13 @@ void Engine::initVulkan() {
     auto gpus = m_instance.enumeratePhysicalDevices();
     m_chosenGPU = std::move(gpus[0]);
 
-    vk::StructureChain<vk::PhysicalDeviceVulkan13Features> featureChain{
-        {.dynamicRendering = true, .synchronization2 = true},
-    };
+    vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan12Features,
+                       vk::PhysicalDeviceVulkan13Features>
+        featureChain{
+            vk::PhysicalDeviceFeatures2{},
+            {.bufferDeviceAddress = true},
+            {.synchronization2 = true, .dynamicRendering = true},
+        };
 
     auto graphicsQueueIndex = getGraphicsQueueFamilyIndex();
 
@@ -74,8 +79,33 @@ void Engine::initVulkan() {
     createSwapchain();
     initFrameDatas();
     initDescriptors();
+    initPipelines();
+    initDefaultData();
+}
+
+void Engine::initDefaultData() {
+    std::array<Vertex, 4> rectVertices;
+    rectVertices[0].position = {0.5, -0.5, 0};
+    rectVertices[1].position = {0.5, 0.5, 0};
+    rectVertices[2].position = {-0.5, -0.5, 0};
+    rectVertices[3].position = {-0.5, 0.5, 0};
+
+    rectVertices[0].color = {0, 0, 0, 1};
+    rectVertices[1].color = {0.5, 0.5, 0.5, 1};
+    rectVertices[2].color = {1, 0, 0, 1};
+    rectVertices[3].color = {0, 1, 0, 1};
+
+    std::array<uint32_t, 6> rectIndices = {0, 1, 2, 2, 1, 3};
+
+    m_rectangle = uploadMesh(rectIndices, rectVertices);
+
+    testMeshes = loadGltfMeshes(this, std::filesystem::path(MODEL_DIR "/basicmesh.glb")).value();
+}
+
+void Engine::initPipelines() {
     initComputePipeline();
-    initTrianglePipeline();
+    // initTrianglePipeline();
+    initMeshPipeline();
 }
 
 uint32_t Engine::getGraphicsQueueFamilyIndex() {
@@ -162,6 +192,26 @@ void Engine::createSwapchain() {
         vkStructsUtils::makeImageViewCreateInfo(m_drawImage.format, m_drawImage.image, vk::ImageAspectFlagBits::eColor);
     m_drawImage.imageView = vk::raii::ImageView(m_device, imageViewCreateInfo);
 
+    m_depthImage.format = vk::Format::eD32Sfloat;
+    m_depthImage.imageExtent = m_drawImage.imageExtent;
+    vk::ImageUsageFlags depthImageUseages{};
+    depthImageUseages |= vk::ImageUsageFlagBits::eDepthStencilAttachment;
+    auto depthImageInfo =
+        vkStructsUtils::makeImageCreateInfo(m_depthImage.format, depthImageUseages, m_depthImage.imageExtent);
+    m_depthImage.image = vk::raii::Image(m_device, depthImageInfo);
+    memRequirements = m_depthImage.image.getMemoryRequirements();
+    vk::MemoryAllocateInfo depthAllocInfo{
+        .allocationSize = memRequirements.size,
+        .memoryTypeIndex = utils::findMemoryTypeIndex(m_chosenGPU, memRequirements.memoryTypeBits,
+                                                      vk::MemoryPropertyFlagBits::eDeviceLocal),
+    };
+    m_depthImage.imageMemory = vk::raii::DeviceMemory(m_device, depthAllocInfo);
+    m_depthImage.image.bindMemory(m_depthImage.imageMemory, 0);
+
+    auto depthImageViewInfo = vkStructsUtils::makeImageViewCreateInfo(m_depthImage.format, m_depthImage.image,
+                                                                      vk::ImageAspectFlagBits::eDepth);
+    m_depthImage.imageView = vk::raii::ImageView(m_device, depthImageViewInfo);
+
     std::cout << "Success to create swapchain.\n";
 }
 
@@ -193,6 +243,12 @@ void Engine::initFrameDatas() {
     for(auto i = 0; i < m_swapchainImages.size(); i++) {
         m_swapchainRenderSemaphores.emplace_back(m_device, semaphoreInfo);
     }
+
+    m_imCommandPool = vk::raii::CommandPool(m_device, poolInfo);
+    allocInfo.commandPool = m_imCommandPool;
+    allocInfo.commandBufferCount = 1;
+    m_imCommandBuffer = std::move(m_device.allocateCommandBuffers(allocInfo).front());
+    m_imFence = vk::raii::Fence(m_device, fenceInfo);
 }
 
 void Engine::draw() {
@@ -219,6 +275,8 @@ void Engine::draw() {
 
     imageUtils::transitionImage(cmd, m_drawImage.image, vk::ImageLayout::eGeneral,
                                 vk::ImageLayout::eColorAttachmentOptimal);
+    imageUtils::transitionImage(cmd, m_depthImage.image, vk::ImageLayout::eUndefined,
+                                vk::ImageLayout::eDepthAttachmentOptimal);
 
     drawGeometry(cmd);
 
@@ -251,10 +309,10 @@ void Engine::draw() {
     m_graphicsQueue.submit2(submitInfo, currentFrameData.renderFence);
 
     vk::PresentInfoKHR presentInfo{
-        .swapchainCount = 1,
-        .pSwapchains = &*m_swapchain,
         .waitSemaphoreCount = 1,
         .pWaitSemaphores = &swapchainRenderSemaphore,
+        .swapchainCount = 1,
+        .pSwapchains = &*m_swapchain,
         .pImageIndices = &swapchainImageIndex,
     };
     VK_CHECK(m_graphicsQueue.presentKHR(presentInfo));
@@ -287,12 +345,12 @@ void Engine::initDescriptors() {
 
     m_drawImageDescriptorSet = m_globalDescriptorAllocator.allocate(m_device, m_drawImageDescriptorSetLayout);
     vk::DescriptorImageInfo imageInfo{
-        .imageLayout = vk::ImageLayout::eGeneral,
         .imageView = m_drawImage.imageView,
+        .imageLayout = vk::ImageLayout::eGeneral,
     };
     vk::WriteDescriptorSet drawImageWrite{
-        .dstBinding = 0,
         .dstSet = m_drawImageDescriptorSet,
+        .dstBinding = 0,
         .descriptorCount = 1,
         .descriptorType = vk::DescriptorType::eStorageImage,
         .pImageInfo = &imageInfo,
@@ -302,9 +360,9 @@ void Engine::initDescriptors() {
 
 void Engine::initComputePipeline() {
     vk::PushConstantRange pushConstant{
+        .stageFlags = vk::ShaderStageFlagBits::eCompute,
         .offset = 0,
         .size = sizeof(ComputePushConstants),
-        .stageFlags = vk::ShaderStageFlagBits::eCompute,
     };
 
     vk::PipelineLayoutCreateInfo computeLayoutInfo{
@@ -324,13 +382,13 @@ void Engine::initComputePipeline() {
     auto skyShaderModule = utils::loadShaderModule(SHADER_DIR "/sky.comp.spv", m_device);
 
     vk::ComputePipelineCreateInfo computePipelineCreateInfo{
-        .layout = m_gradientPipelineLayout,
         .stage = stageInfo,
+        .layout = m_gradientPipelineLayout,
     };
 
     ComputeEffect gradient{
-        .layout = m_gradientPipelineLayout,
         .name = "gradient",
+        .layout = m_gradientPipelineLayout,
         .data =
             {
                 .data1 = glm::vec4(1, 0, 0, 1),
@@ -341,8 +399,8 @@ void Engine::initComputePipeline() {
 
     computePipelineCreateInfo.stage.module = skyShaderModule;
     ComputeEffect sky{
-        .layout = m_gradientPipelineLayout,
         .name = "sky",
+        .layout = m_gradientPipelineLayout,
         .data = {.data1 = glm::vec4(0.1, 0.2, 0.4, 0.97)},
     };
     sky.pipeline = m_device.createComputePipeline(nullptr, computePipelineCreateInfo);
@@ -391,12 +449,12 @@ void Engine::initImGUI(SDL_Window* pWindow) {
         .DescriptorPool = *m_imguiPool,
         .MinImageCount = 3,
         .ImageCount = 3,
-        .UseDynamicRendering = true,
         .PipelineInfoMain =
             {
                 .MSAASamples = VK_SAMPLE_COUNT_1_BIT,
                 .PipelineRenderingCreateInfo = pipelineRenderingCreateInfo,
             },
+        .UseDynamicRendering = true,
     };
     ImGui_ImplVulkan_Init(&initInfo);
 }
@@ -432,36 +490,16 @@ void Engine::setupGui() {
 }
 #endif
 
-void Engine::initTrianglePipeline() {
-    auto vertShaderModule = utils::loadShaderModule(SHADER_DIR "/colored_triangle.vert.spv", m_device);
-    auto fragShaderModule = utils::loadShaderModule(SHADER_DIR "/colored_triangle.frag.spv", m_device);
-
-    vk::PipelineLayoutCreateInfo layoutInfo{};
-    m_trianglePipelineLayout = vk::raii::PipelineLayout(m_device, layoutInfo);
-
-    PipelineBuilder pipelineBuilder{};
-    pipelineBuilder.m_pipelineLayout = m_trianglePipelineLayout;
-    pipelineBuilder.setShaders(vertShaderModule, fragShaderModule);
-    pipelineBuilder.setInputTopology(vk::PrimitiveTopology::eTriangleList);
-    pipelineBuilder.setPolygonMode(vk::PolygonMode::eFill);
-    pipelineBuilder.setCullMode(vk::CullModeFlagBits::eNone, vk::FrontFace::eClockwise);
-    pipelineBuilder.setMultiSamplingNone();
-    pipelineBuilder.disableBlending();
-    pipelineBuilder.disableDepthTest();
-    pipelineBuilder.setColorAttachmentFormat(m_drawImage.format);
-    pipelineBuilder.setDepthFormat(vk::Format::eUndefined);
-
-    m_trianglePipeline = pipelineBuilder.build(m_device);
-}
-
 void Engine::drawGeometry(vk::CommandBuffer cmd) {
     auto colorAttachment = vkStructsUtils::makeColorAttachmentInfo(m_drawImage.imageView, nullptr,
                                                                    vk::ImageLayout::eColorAttachmentOptimal);
+    auto depthAttachment =
+        vkStructsUtils::makeDepthAttachmentInfo(m_depthImage.imageView, vk::ImageLayout::eDepthAttachmentOptimal);
     auto renderingInfo = vkStructsUtils::makeRenderingInfo(
-        {.width = m_drawImage.imageExtent.width, .height = m_drawImage.imageExtent.height}, &colorAttachment, nullptr);
+        {.width = m_drawImage.imageExtent.width, .height = m_drawImage.imageExtent.height}, &colorAttachment,
+        &depthAttachment);
 
     cmd.beginRendering(renderingInfo);
-    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, m_trianglePipeline);
 
     vk::Viewport viewport = {};
     viewport.x = 0;
@@ -479,6 +517,135 @@ void Engine::drawGeometry(vk::CommandBuffer cmd) {
     scissor.extent.height = m_drawImage.imageExtent.height;
     cmd.setScissor(0, 1, &scissor);
 
-    cmd.draw(3, 1, 0, 0);
+    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, m_meshPipeline);
+    GPUDrawPushConstants pushConstants{
+        .worldMatrix = glm::mat4{1.f},
+        .vertexBuffer = m_rectangle.vertexBufferAddress,
+    };
+
+    // mat view
+    glm::mat4 view = glm::translate(glm::vec3{0, 0, -5});
+    glm::mat4 projection =
+        glm::perspective(glm::radians(70.f),
+                         (float)m_drawImage.imageExtent.width / (float)m_drawImage.imageExtent.height, 0.1f, 10000.f);
+    projection[1][1] *= -1;
+    pushConstants.worldMatrix = projection * view;
+
+    // mesh draw
+    pushConstants.vertexBuffer = testMeshes[2]->meshBuffers.vertexBufferAddress;
+    cmd.pushConstants(m_meshPipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(GPUDrawPushConstants),
+                      &pushConstants);
+    cmd.bindIndexBuffer(testMeshes[2]->meshBuffers.indexBuffer.buffer, 0, vk::IndexType::eUint32);
+    cmd.drawIndexed(testMeshes[2]->surfaces[0].count, 1, testMeshes[2]->surfaces[0].startIndex, 0, 0);
+
     cmd.endRendering();
+}
+
+AllocatedBuffer Engine::createBuffer(size_t allocSize, vk::BufferUsageFlags usage,
+                                     vk::MemoryPropertyFlags memoryProperty) {
+    vk::BufferCreateInfo bufferInfo{
+        .size = allocSize,
+        .usage = usage,
+    };
+    AllocatedBuffer bufferStruct;
+    bufferStruct.buffer = vk::raii::Buffer(m_device, bufferInfo);
+    auto memoryRequirements = bufferStruct.buffer.getMemoryRequirements();
+
+    vk::MemoryAllocateInfo allocInfo{
+        .allocationSize = memoryRequirements.size,
+        .memoryTypeIndex = utils::findMemoryTypeIndex(m_chosenGPU, memoryRequirements.memoryTypeBits, memoryProperty),
+    };
+
+    vk::MemoryAllocateFlagsInfo allocFlagsInfo{
+        .flags = vk::MemoryAllocateFlagBits::eDeviceAddress,
+    };
+    if(usage & vk::BufferUsageFlagBits::eShaderDeviceAddress) {
+        allocInfo.pNext = &allocFlagsInfo;
+    }
+
+    bufferStruct.bufferMemory = m_device.allocateMemory(allocInfo);
+    bufferStruct.buffer.bindMemory(bufferStruct.bufferMemory, 0);
+    bufferStruct.usage = usage;
+    return bufferStruct;
+}
+
+GPUMeshBuffers Engine::uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices) {
+    const size_t vertexBufferSize = vertices.size() * sizeof(Vertex);
+    const size_t indexBufferSize = indices.size() * sizeof(uint32_t);
+
+    GPUMeshBuffers newSurface;
+    newSurface.vertexBuffer =
+        createBuffer(vertexBufferSize,
+                     vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst |
+                         vk::BufferUsageFlagBits::eShaderDeviceAddress,
+                     vk::MemoryPropertyFlagBits::eDeviceLocal);
+
+    vk::BufferDeviceAddressInfo deviceAddressInfo{.buffer = newSurface.vertexBuffer.buffer};
+    newSurface.vertexBufferAddress = m_device.getBufferAddress(deviceAddressInfo);
+
+    newSurface.indexBuffer =
+        createBuffer(indexBufferSize, vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst,
+                     vk::MemoryPropertyFlagBits::eDeviceLocal);
+
+    AllocatedBuffer stagingBuffer =
+        createBuffer(vertexBufferSize + indexBufferSize, vk::BufferUsageFlagBits::eTransferSrc,
+                     vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+    void* data = stagingBuffer.bufferMemory.mapMemory(0, vertexBufferSize);
+    memcpy(data, vertices.data(), vertexBufferSize);
+    memcpy((char*)data + vertexBufferSize, indices.data(), indexBufferSize);
+    immediateSubmit([&](vk::CommandBuffer cmd) {
+        vk::BufferCopy vertexCopy{.size = vertexBufferSize};
+        cmd.copyBuffer(stagingBuffer.buffer, newSurface.vertexBuffer.buffer, vertexCopy);
+
+        vk::BufferCopy indexCopy{.srcOffset = vertexBufferSize, .size = indexBufferSize};
+        cmd.copyBuffer(stagingBuffer.buffer, newSurface.indexBuffer.buffer, indexCopy);
+    });
+    return newSurface;
+}
+
+void Engine::immediateSubmit(std::function<void(vk::CommandBuffer cmd)>&& function) {
+    m_device.resetFences(*m_imFence);
+    m_imCommandBuffer.reset();
+
+    vk::CommandBufferBeginInfo beginInfo{.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit};
+    m_imCommandBuffer.begin(beginInfo);
+
+    function(m_imCommandBuffer);
+
+    m_imCommandBuffer.end();
+    vk::CommandBufferSubmitInfo cmdSubmitInfo{.commandBuffer = m_imCommandBuffer};
+
+    const auto submitInfo = vkStructsUtils::makeSubmitInfo(&cmdSubmitInfo, nullptr, nullptr);
+    m_graphicsQueue.submit2(submitInfo, m_imFence);
+    m_device.waitForFences(*m_imFence, vk::True, UINT64_MAX);
+}
+
+void Engine::initMeshPipeline() {
+    auto triangleFragShader = utils::loadShaderModule(SHADER_DIR "/colored_triangle.frag.spv", m_device);
+    auto triangleVertShader = utils::loadShaderModule(SHADER_DIR "/colored_triangle_mesh.vert.spv", m_device);
+
+    vk::PushConstantRange bufferRange{
+        .stageFlags = vk::ShaderStageFlagBits::eVertex,
+        .offset = 0,
+        .size = sizeof(GPUDrawPushConstants),
+    };
+    auto pipelineLayoutInfo = vkStructsUtils::makePipelineLayoutCreateInfo();
+    pipelineLayoutInfo.pPushConstantRanges = &bufferRange;
+    pipelineLayoutInfo.pushConstantRangeCount = 1;
+    m_meshPipelineLayout = m_device.createPipelineLayout(pipelineLayoutInfo);
+
+    PipelineBuilder pipelineBuilder{};
+
+    pipelineBuilder.m_pipelineLayout = m_meshPipelineLayout;
+    pipelineBuilder.setShaders(triangleVertShader, triangleFragShader);
+    pipelineBuilder.setInputTopology(vk::PrimitiveTopology::eTriangleList);
+    pipelineBuilder.setPolygonMode(vk::PolygonMode::eFill);
+    pipelineBuilder.setCullMode(vk::CullModeFlagBits::eNone, vk::FrontFace::eClockwise);
+    pipelineBuilder.setMultiSamplingNone();
+    pipelineBuilder.disableBlending();
+    // pipelineBuilder.disableDepthTest();
+    pipelineBuilder.enableDepthTest(true, vk::CompareOp::eLessOrEqual);
+    pipelineBuilder.setColorAttachmentFormat(m_drawImage.format);
+    pipelineBuilder.setDepthFormat(m_depthImage.format);
+    m_meshPipeline = pipelineBuilder.build(m_device);
 }

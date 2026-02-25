@@ -1,6 +1,24 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.13) # fastgltf requires 3.13
 
 project("vk_guide_sway")
+
+# Include FetchContent module
+include(FetchContent)
+
+# Fetch fastgltf
+FetchContent_Declare(
+    fastgltf
+    GIT_REPOSITORY https://github.com/spnda/fastgltf.git
+    GIT_TAG main # 或者使用特定版本标签，如 "v0.9.0"
+)
+
+# Set fastgltf options (disable tests and examples for faster build)
+set(FASTGLTF_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
+set(FASTGLTF_ENABLE_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(FASTGLTF_ENABLE_DOCS OFF CACHE BOOL "" FORCE)
+
+# Make fastgltf available
+FetchContent_MakeAvailable(fastgltf)
 
 set(LIB_DIST_DIR ${CMAKE_CURRENT_LIST_DIR}/dist)
 set(SHADER_DIST_DIR ${LIB_DIST_DIR}/shaders)

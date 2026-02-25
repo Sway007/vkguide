@@ -30,4 +30,5 @@ class PipelineBuilder {
     void               setColorAttachmentFormat(vk::Format format);
     void               setDepthFormat(vk::Format format);
     void               disableDepthTest();
+    void               enableDepthTest(bool depthWriteEnable, vk::CompareOp op);
 };

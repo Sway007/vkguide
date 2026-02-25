@@ -10,9 +10,9 @@ struct FrameData {
 };
 
 struct AllocatedImage {
+    vk::raii::DeviceMemory imageMemory = nullptr;
     vk::raii::Image        image = nullptr;
     vk::raii::ImageView    imageView = nullptr;
-    vk::raii::DeviceMemory imageMemory = nullptr;
     vk::Extent3D           imageExtent;
     vk::Format             format;
 };
@@ -23,8 +23,8 @@ struct DescriptorLayoutBuilder {
     void addBinding(uint32_t binding, vk::DescriptorType type) {
         vk::DescriptorSetLayoutBinding newBind{
             .binding = binding,
-            .descriptorCount = 1,
             .descriptorType = type,
+            .descriptorCount = 1,
         };
         bindings.push_back(newBind);
     }
@@ -97,4 +97,29 @@ struct ComputeEffect {
     vk::raii::Pipeline   pipeline = nullptr;
     vk::PipelineLayout   layout;
     ComputePushConstants data;
+};
+
+struct AllocatedBuffer {
+    vk::raii::DeviceMemory bufferMemory = nullptr;
+    vk::raii::Buffer       buffer = nullptr;
+    vk::BufferUsageFlags   usage;
+};
+
+struct Vertex {
+    glm::vec3 position;
+    float     uvX;  // packed into position.w in shader
+    glm::vec3 normal;
+    float     uvY;  // packed into normal.w in shader
+    glm::vec4 color;
+};
+
+struct GPUMeshBuffers {
+    AllocatedBuffer   indexBuffer;
+    AllocatedBuffer   vertexBuffer;
+    vk::DeviceAddress vertexBufferAddress;
+};
+
+struct GPUDrawPushConstants {
+    glm::mat4         worldMatrix;
+    vk::DeviceAddress vertexBuffer;
 };

@@ -59,8 +59,8 @@ void imageUtils::transitionImage(vk::CommandBuffer cmd, vk::Image image, vk::Ima
 void imageUtils::copyImageToImage(vk::CommandBuffer cmd, vk::Image src, vk::Image dst, vk::Extent2D srcSize,
                                   vk::Extent2D dstSize) {
     vk::ImageBlit2 blitRegion{
-        .srcSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .layerCount = 1, .mipLevel = 0},
-        .dstSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .layerCount = 1, .mipLevel = 0},
+        .srcSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .mipLevel = 0, .layerCount = 1},
+        .dstSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .mipLevel = 0, .layerCount = 1},
     };
     blitRegion.srcOffsets[1] = {
         .x = static_cast<int32_t>(srcSize.width),

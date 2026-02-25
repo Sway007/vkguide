@@ -45,10 +45,10 @@ vk::raii::Pipeline PipelineBuilder::build(vk::raii::Device& device) {
         .pViewportState = &viewport,
         .pRasterizationState = &m_rasterizer,
         .pMultisampleState = &m_multisampling,
-        .pColorBlendState = &colorBlending,
         .pDepthStencilState = &m_depthStencil,
-        .layout = m_pipelineLayout,
+        .pColorBlendState = &colorBlending,
         .pDynamicState = &dynamicInfo,
+        .layout = m_pipelineLayout,
     };
 
     return vk::raii::Pipeline(device, nullptr, pipelineInfo);
@@ -102,4 +102,11 @@ void PipelineBuilder::setDepthFormat(vk::Format format) { m_renderInfo.depthAtta
 void PipelineBuilder::disableDepthTest() {
     m_depthStencil.depthTestEnable = vk::False;
     m_depthStencil.depthWriteEnable = vk::False;
+}
+
+void PipelineBuilder::enableDepthTest(bool depthWriteEnable, vk::CompareOp op) {
+    m_depthStencil.depthTestEnable = vk::True;
+    m_depthStencil.depthWriteEnable = depthWriteEnable;
+    m_depthStencil.depthCompareOp = op;
+    m_depthStencil.depthBoundsTestEnable = vk::False;
 }

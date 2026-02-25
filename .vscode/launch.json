@@ -20,6 +20,26 @@
                     "ignoreFailures": true
                 }
             ]
+        },
+        {
+            "name": "Debug Playground",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/playground/build/cpp_json_parse",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/playground",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "lldb",
+            "preLaunchTask": "Build Playground",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for lldb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ]
         }
     ]
 }

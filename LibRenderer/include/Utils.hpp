@@ -54,10 +54,10 @@ namespace vkStructsUtils {
         return vk::SubmitInfo2{
             .waitSemaphoreInfoCount = waitSemaphore == nullptr ? 0 : 1u,
             .pWaitSemaphoreInfos = waitSemaphore,
-            .signalSemaphoreInfoCount = signalSemaphore == nullptr ? 0 : 1u,
-            .pSignalSemaphoreInfos = signalSemaphore,
             .commandBufferInfoCount = 1,
             .pCommandBufferInfos = cmd,
+            .signalSemaphoreInfoCount = signalSemaphore == nullptr ? 0 : 1u,
+            .pSignalSemaphoreInfos = signalSemaphore,
         };
     }
 
@@ -77,11 +77,11 @@ namespace vkStructsUtils {
     inline vk::ImageViewCreateInfo makeImageViewCreateInfo(vk::Format format, vk::Image image,
                                                            vk::ImageAspectFlags aspectFlags) {
         return vk::ImageViewCreateInfo{
-            .viewType = vk::ImageViewType::e2D,
             .image = image,
+            .viewType = vk::ImageViewType::e2D,
             .format = format,
             .subresourceRange =
-                {.baseMipLevel = 0, .levelCount = 1, .baseArrayLayer = 0, .layerCount = 1, .aspectMask = aspectFlags},
+                {.aspectMask = aspectFlags, .baseMipLevel = 0, .levelCount = 1, .baseArrayLayer = 0, .layerCount = 1},
         };
     }
 
@@ -97,6 +97,17 @@ namespace vkStructsUtils {
             colorAttachmentInfo.clearValue = *clear;
         }
         return colorAttachmentInfo;
+    }
+
+    inline vk::RenderingAttachmentInfo makeDepthAttachmentInfo(vk::ImageView imageView, vk::ImageLayout layout) {
+        vk::RenderingAttachmentInfo depthAttachmentInfo{
+            .imageView = imageView,
+            .imageLayout = layout,
+            .loadOp = vk::AttachmentLoadOp::eClear,
+            .storeOp = vk::AttachmentStoreOp::eStore,
+        };
+        depthAttachmentInfo.clearValue.depthStencil.depth = 1.0f;
+        return depthAttachmentInfo;
     }
 
     inline vk::RenderingInfo makeRenderingInfo(vk::Extent2D renderExtent, vk::RenderingAttachmentInfo* colorAttachment,
@@ -133,5 +144,15 @@ namespace vkStructsUtils {
             colorAttachment.clearValue = *clearValue;
         }
         return colorAttachment;
+    }
+
+    inline vk::PipelineLayoutCreateInfo makePipelineLayoutCreateInfo() {
+        return vk::PipelineLayoutCreateInfo{
+            .flags = {},
+            .setLayoutCount = 0,
+            .pSetLayouts = nullptr,
+            .pushConstantRangeCount = 0,
+            .pPushConstantRanges = nullptr,
+        };
     }
 }  // namespace vkStructsUtils
